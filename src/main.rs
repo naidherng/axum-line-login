@@ -46,16 +46,11 @@ use oauth2::{
     CsrfToken,
     RedirectUrl,
     Scope,
-    TokenResponse,
     TokenUrl,
     ExtraTokenFields,
-    EmptyExtraTokenFields,
     Client,
     StandardRevocableToken,
-    AccessToken,
-    TokenType,
-    helpers,
-    RefreshToken,
+    StandardTokenResponse,
 };
 use serde::{ Deserialize, Serialize };
 use tower_http::{ classify::ServerErrorsFailureClass, trace::TraceLayer };
@@ -165,13 +160,16 @@ impl FromRef<AppState> for LineClient {
     }
 }
 
+///
+/// Implement ExtraFiled
+///
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct LineExtraTokenFields {
     id_token: String,
 }
 impl ExtraTokenFields for LineExtraTokenFields {}
 
-type TokenLineResponse = LineTokenResponse<EmptyExtraTokenFields, BasicTokenType>;
+type TokenLineResponse = StandardTokenResponse<LineExtraTokenFields, BasicTokenType>;
 
 type LineClient = Client<
     BasicErrorResponse,
@@ -181,157 +179,6 @@ type LineClient = Client<
     StandardRevocableToken,
     BasicRevocationErrorResponse
 >;
-
-///
-///
-///
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct LineTokenResponse<EF, TT> where EF: ExtraTokenFields, TT: TokenType {
-    access_token: AccessToken,
-    #[serde(bound = "TT: TokenType")]
-    #[serde(deserialize_with = "helpers::deserialize_untagged_enum_case_insensitive")]
-    token_type: TT,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    expires_in: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    refresh_token: Option<RefreshToken>,
-    #[serde(rename = "scope")]
-    #[serde(deserialize_with = "helpers::deserialize_space_delimited_vec")]
-    #[serde(serialize_with = "helpers::serialize_space_delimited_vec")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    scopes: Option<Vec<Scope>>,
-
-    #[serde(bound = "EF: ExtraTokenFields")]
-    #[serde(flatten)]
-    extra_fields: EF,
-    id_token: AccessToken,
-}
-
-impl<EF, TT> LineTokenResponse<EF, TT> where EF: ExtraTokenFields, TT: TokenType {
-    ///
-    /// Instantiate a new OAuth2 token response.
-    ///
-    pub fn new(
-        access_token: AccessToken,
-        token_type: TT,
-        extra_fields: EF,
-        id_token: AccessToken
-    ) -> Self {
-        Self {
-            access_token,
-            token_type,
-            expires_in: None,
-            refresh_token: None,
-            scopes: None,
-            extra_fields,
-            id_token,
-        }
-    }
-
-    ///
-    /// Set the `access_token` field.
-    ///
-    pub fn set_access_token(&mut self, access_token: AccessToken) {
-        self.access_token = access_token;
-    }
-
-    ///
-    /// Set the `token_type` field.
-    ///
-    pub fn set_token_type(&mut self, token_type: TT) {
-        self.token_type = token_type;
-    }
-
-    ///
-    /// Set the `expires_in` field.
-    ///
-    pub fn set_expires_in(&mut self, expires_in: Option<&Duration>) {
-        self.expires_in = expires_in.map(Duration::as_secs);
-    }
-
-    ///
-    /// Set the `refresh_token` field.
-    ///
-    pub fn set_refresh_token(&mut self, refresh_token: Option<RefreshToken>) {
-        self.refresh_token = refresh_token;
-    }
-
-    ///
-    /// Set the `scopes` field.
-    ///
-    pub fn set_scopes(&mut self, scopes: Option<Vec<Scope>>) {
-        self.scopes = scopes;
-    }
-
-    ///
-    /// Extra fields defined by the client application.
-    ///
-    pub fn extra_fields(&self) -> &EF {
-        &self.extra_fields
-    }
-
-    ///
-    /// Set the extra fields defined by the client application.
-    ///
-    pub fn set_extra_fields(&mut self, extra_fields: EF) {
-        self.extra_fields = extra_fields;
-    }
-
-    pub fn set_id_token(&mut self, id_token: AccessToken) {
-        self.id_token = id_token;
-    }
-
-    fn id_token(&self) -> &AccessToken {
-        &self.id_token
-    }
-}
-impl<EF, TT> TokenResponse<TT>
-    for LineTokenResponse<EF, TT>
-    where EF: ExtraTokenFields, TT: TokenType
-{
-    ///
-    /// REQUIRED. The access token issued by the authorization server.
-    ///
-    fn access_token(&self) -> &AccessToken {
-        &self.access_token
-    }
-    ///
-    /// REQUIRED. The type of the token issued as described in
-    /// [Section 7.1](https://tools.ietf.org/html/rfc6749#section-7.1).
-    /// Value is case insensitive and deserialized to the generic `TokenType` parameter.
-    ///
-    fn token_type(&self) -> &TT {
-        &self.token_type
-    }
-    ///
-    /// RECOMMENDED. The lifetime in seconds of the access token. For example, the value 3600
-    /// denotes that the access token will expire in one hour from the time the response was
-    /// generated. If omitted, the authorization server SHOULD provide the expiration time via
-    /// other means or document the default value.
-    ///
-    fn expires_in(&self) -> Option<Duration> {
-        self.expires_in.map(Duration::from_secs)
-    }
-    ///
-    /// OPTIONAL. The refresh token, which can be used to obtain new access tokens using the same
-    /// authorization grant as described in
-    /// [Section 6](https://tools.ietf.org/html/rfc6749#section-6).
-    ///
-    fn refresh_token(&self) -> Option<&RefreshToken> {
-        self.refresh_token.as_ref()
-    }
-    ///
-    /// OPTIONAL, if identical to the scope requested by the client; otherwise, REQUIRED. The
-    /// scope of the access token as described by
-    /// [Section 3.3](https://tools.ietf.org/html/rfc6749#section-3.3). If included in the response,
-    /// this space-delimited field is parsed into a `Vec` of individual scopes. If omitted from
-    /// the response, this field is `None`.
-    ///
-    fn scopes(&self) -> Option<&Vec<Scope>> {
-        self.scopes.as_ref()
-    }
-}
 
 fn oauth_client() -> Result<LineClient, AppError> {
     // Environment variables (* = required):
@@ -456,7 +303,7 @@ async fn login_authorized(
 
     // Fetch user data from line
     let verrify_parms = [
-        ("id_token", token.id_token().secret().to_owned()),
+        ("id_token", token.extra_fields().id_token.to_owned()),
         ("client_id", oauth_client.client_id().to_string()),
     ];
 
